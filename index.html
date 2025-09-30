@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaSafe - Heavy Metal Pollution Index (HMPI) Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .btn-primary {
+            background-color: #0077b6;
+            color: white;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #023e8a;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0077b6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 90%;
+            width: 500px;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">AquaSafe</h1>
+            <p class="text-lg text-gray-600 mt-2">Automated Heavy Metal Pollution Index (HMPI) Monitoring</p>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Left Column: Data Input & Controls -->
+            <div class="lg:col-span-1 space-y-8">
+                <!-- Data Input Card -->
+                <div class="card p-6" id="data-input-card">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">1. Input Groundwater Data</h2>
+                    <form id="data-form" class="space-y-4">
+                        <div>
+                            <label for="location" class="block text-sm font-medium text-gray-700">Location Tag</label>
+                            <input type="text" id="location" placeholder="e.g., Well-A, Site-B" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label for="metal-data" class="block text-sm font-medium text-gray-700">Metal Concentrations (CSV format)</label>
+                            <textarea id="metal-data" rows="6" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="Metal,Value,Unit&#10;Arsenic,0.015,mg/L&#10;Lead,0.02,mg/L&#10;Mercury,0.001,mg/L"></textarea>
+                        </div>
+                        <button type="submit" class="w-full btn-primary flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Compute HMPI
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Controls Card -->
+                <div class="card p-6">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">2. Analysis Controls</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="standard" class="block text-sm font-medium text-gray-700">HMPI Standard</label>
+                            <select id="standard" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                <option>WHO</option>
+                                <option>BIS</option>
+                                <option>US EPA</option>
+                            </select>
+                        </div>
+                        <button id="export-btn" class="w-full btn-primary bg-green-600 hover:bg-green-700 flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export Report (PDF)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Dashboard & Reports -->
+            <div class="lg:col-span-2 space-y-8">
+                <div id="results-container" class="hidden">
+                    <!-- Results Summary Card -->
+                    <div class="card p-6 mb-8" id="report-content">
+                        <h2 class="text-2xl font-semibold mb-4">Analysis for <span id="result-location" class="text-blue-600"></span></h2>
+                        <div id="summary-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                            <div class="p-4 bg-blue-50 rounded-lg">
+                                <p class="text-sm text-gray-500">HMPI Score</p>
+                                <p id="hmpi-score" class="text-3xl font-bold text-blue-800">--</p>
+                            </div>
+                            <div class="p-4 bg-red-50 rounded-lg">
+                                <p class="text-sm text-gray-500">Pollution Status</p>
+                                <p id="pollution-status" class="text-3xl font-bold text-red-800">--</p>
+                            </div>
+                            <div class="p-4 bg-gray-100 rounded-lg">
+                                <p class="text-sm text-gray-500">Standard Used</p>
+                                <p id="standard-used" class="text-3xl font-bold text-gray-800">--</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabs for Visualization -->
+                    <div class="card">
+                        <div class="border-b border-gray-200">
+                            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                                <a href="#" id="tab-dashboard" class="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Dashboard</a>
+                                <a href="#" id="tab-map" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">GIS Hotspot Map</a>
+                                <a href="#" id="tab-ai" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">AI/ML Insights</a>
+                            </nav>
+                        </div>
+
+                        <!-- Dashboard Panel -->
+                        <div id="panel-dashboard" class="p-6">
+                            <h3 class="text-xl font-semibold mb-4">Pollution Levels Dashboard</h3>
+                            <div id="plotly-chart" class="w-full h-96"></div>
+                        </div>
+                        
+                        <!-- GIS Map Panel -->
+                        <div id="panel-map" class="p-6 hidden">
+                            <h3 class="text-xl font-semibold mb-4">GIS Hotspot Map</h3>
+                            <p class="text-gray-600 mb-4">This is a placeholder for an interactive GIS map. Libraries like Leaflet.js or Mapbox would be used to visualize pollution hotspots based on geo-tagged data.</p>
+                            <img src="https://placehold.co/800x400/e2e8f0/4a5568?text=Placeholder+GIS+Map" alt="GIS Hotspot Map Placeholder" class="rounded-lg shadow-md w-full">
+                        </div>
+
+                        <!-- AI/ML Insights Panel -->
+                        <div id="panel-ai" class="p-6 hidden">
+                            <h3 class="text-xl font-semibold mb-4">AI-Powered Insights</h3>
+                            <div class="space-y-4">
+                                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+                                    <h4 class="font-bold">Trend Prediction</h4>
+                                    <p class="text-sm text-yellow-800">AI model predicts a <strong>15% increase</strong> in Lead concentration over the next 6 months for this location based on historical data.</p>
+                                </div>
+                                <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
+                                    <h4 class="font-bold">Outlier Detected</h4>
+                                    <p class="text-sm text-red-800">The current Arsenic level (0.015 mg/L) is a significant outlier compared to the past 12 months' average (0.008 mg/L).</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="initial-message" class="card p-10 text-center">
+                    <h2 class="text-2xl font-semibold">Welcome to AquaSafe</h2>
+                    <p class="text-gray-600 mt-2">Enter your groundwater data to begin the analysis.</p>
+                </div>
+            </div>
+        </div>
+
+        
+
+    <!-- Main JS Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const form = document.getElementById('data-form');
+            const resultsContainer = document.getElementById('results-container');
+            const initialMessage = document.getElementById('initial-message');
+            const loadingModal = document.getElementById('loading-modal');
+            const exportBtn = document.getElementById('export-btn');
+
+            // --- Mock Data and Standards ---
+            const standards = {
+                'WHO': { 'Arsenic': 0.01, 'Lead': 0.01, 'Mercury': 0.006, 'Cadmium': 0.003, 'Chromium': 0.05 },
+                'BIS': { 'Arsenic': 0.01, 'Lead': 0.01, 'Mercury': 0.001, 'Cadmium': 0.003, 'Chromium': 0.05 },
+                'US EPA': { 'Arsenic': 0.01, 'Lead': 0.015, 'Mercury': 0.002, 'Cadmium': 0.005, 'Chromium': 0.1 }
+            };
+
+            // --- Event Listeners ---
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                showLoader();
+                
+                // Simulate API call and processing
+                setTimeout(() => {
+                    processData();
+                    hideLoader();
+                }, 1500);
+            });
+            
+            exportBtn.addEventListener('click', generatePDF);
+
+            // Tab functionality
+            const tabs = {
+                dashboard: document.getElementById('tab-dashboard'),
+                map: document.getElementById('tab-map'),
+                ai: document.getElementById('tab-ai')
+            };
+            const panels = {
+                dashboard: document.getElementById('panel-dashboard'),
+                map: document.getElementById('panel-map'),
+                ai: document.getElementById('panel-ai')
+            };
+            
+            Object.keys(tabs).forEach(key => {
+                tabs[key].addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchTab(key);
+                });
+            });
+
+            // --- Core Functions ---
+            function processData() {
+                const location = document.getElementById('location').value || 'Default Location';
+                const rawData = document.getElementById('metal-data').value;
+                const standardKey = document.getElementById('standard').value;
+
+                // 1. Preprocessing and Validation
+                const parsedData = parseCSV(rawData);
+                if (parsedData.length === 0) {
+                    alert('Invalid or empty data. Please use the format: Metal,Value,Unit');
+                    return;
+                }
+
+                // 2. Compute HMPI (Simplified logic for demo)
+                const { hmpi, pollutionStatus, processedMetals } = calculateHMPI(parsedData, standardKey);
+
+                // 3. Update UI
+                updateSummary(location, hmpi, pollutionStatus, standardKey);
+                createPlotlyChart(processedMetals, standardKey);
+                
+                initialMessage.classList.add('hidden');
+                resultsContainer.classList.remove('hidden');
+                switchTab('dashboard'); // Default to dashboard view
+            }
+
+            function parseCSV(text) {
+                const lines = text.trim().split('\n').slice(1); // Skip header
+                return lines.map(line => {
+                    const [metal, value, unit] = line.split(',');
+                    if (metal && value && !isNaN(parseFloat(value)) && unit) {
+                        return { metal: metal.trim(), value: parseFloat(value), unit: unit.trim() };
+                    }
+                    return null;
+                }).filter(item => item !== null);
+            }
+
+            function calculateHMPI(data, standardKey) {
+                const standardLimits = standards[standardKey];
+                let hmpiSum = 0;
+                let processedMetals = [];
+
+                data.forEach(item => {
+                    if (standardLimits[item.metal]) {
+                        // For simplicity, assume all units are mg/L and don't need conversion
+                        const concentration = item.value;
+                        const standardValue = standardLimits[item.metal];
+                        const ratio = concentration / standardValue;
+                        hmpiSum += ratio;
+                        processedMetals.push({ metal: item.metal, concentration, standardValue });
+                    }
+                });
+
+                const hmpi = hmpiSum.toFixed(2);
+                let pollutionStatus = 'Low';
+                if (hmpi > 150) pollutionStatus = 'High';
+                else if (hmpi > 100) pollutionStatus = 'Medium';
+
+                return { hmpi, pollutionStatus, processedMetals };
+            }
+
+            function updateSummary(location, hmpi, status, standard) {
+                document.getElementById('result-location').textContent = location;
+                document.getElementById('hmpi-score').textContent = hmpi;
+                document.getElementById('pollution-status').textContent = status;
+                document.getElementById('standard-used').textContent = standard;
+            }
+
+            function createPlotlyChart(metals, standardKey) {
+                const trace1 = {
+                    x: metals.map(m => m.metal),
+                    y: metals.map(m => m.concentration),
+                    name: 'Measured Concentration',
+                    type: 'bar',
+                    marker: { color: '#0077b6' }
+                };
+
+                const trace2 = {
+                    x: metals.map(m => m.metal),
+                    y: metals.map(m => m.standardValue),
+                    name: `${standardKey} Standard Limit`,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    marker: { color: '#e63946', size: 10 },
+                    line: { dash: 'dot', width: 2 }
+                };
+
+                const layout = {
+                    title: 'Metal Concentrations vs. Standards',
+                    yaxis: { title: 'Concentration (mg/L)' },
+                    barmode: 'group',
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: {
+                        family: 'Inter, sans-serif',
+                        color: '#4a5568'
+                    }
+                };
+
+                Plotly.newPlot('plotly-chart', [trace1, trace2], layout, {responsive: true});
+            }
+
+            function switchTab(activeKey) {
+                Object.keys(tabs).forEach(key => {
+                    const tab = tabs[key];
+                    const panel = panels[key];
+                    if (key === activeKey) {
+                        tab.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+                        tab.classList.add('border-blue-500', 'text-blue-600');
+                        panel.classList.remove('hidden');
+                    } else {
+                        tab.classList.remove('border-blue-500', 'text-blue-600');
+                        tab.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+                        panel.classList.add('hidden');
+                    }
+                });
+            }
+
+            function generatePDF() {
+                const { jsPDF } = window.jspdf;
+                const reportElement = document.getElementById('report-content');
+                
+                showLoader();
+
+                html2canvas(reportElement).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF();
+                    const imgProps= pdf.getImageProperties(imgData);
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                    
+                    pdf.setFontSize(22);
+                    pdf.text("AquaSafe Analysis Report", 15, 20);
+                    pdf.addImage(imgData, 'PNG', 15, 30, pdfWidth - 30, pdfHeight - 10);
+                    pdf.save("aquasafe-report.pdf");
+                    hideLoader();
+                });
+            }
+
+            function showLoader() {
+                loadingModal.classList.remove('hidden');
+            }
+
+            function hideLoader() {
+                loadingModal.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
